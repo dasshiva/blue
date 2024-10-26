@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include "oclass.h"
 #include <stdio.h>
+#include <math.h>
 
 #define log(...) printf(__VA_ARGS__);
 struct ConstantPool {
@@ -110,12 +111,74 @@ int ParseFile (struct ClassFile* file, u16 version) {
 				file->Offset += length;
 				break;
 
+			case 3: // Integer
+				int ele = (int) ReadU32(file);
+				break;
+			
+			case 4: // Float
+				int bits = (int) ReadU32(file);
+				float res = 0.0f;
+				if (bits == 0x7f800000)
+					res = INFINITY;
+				else if (bits == 0xff800000)
+					res = -INFINITY;
+				else if ((bits > 0x7f800000 && bits < 0x7fffffff) ||
+						(bits > 0xff800001 && bits < 0xffffffff))
+					res = NAN;
+				else {
+					int s = ((bits >> 31) == 0) ? 1 : -1;
+					int e = ((bits >> 23) & 0xff);
+					int m = (e == 0) ? (bits & 0x7fffff) << 1 :
+						(bits & 0x7fffff) | 0x800000;
+					res = s * m * pow(2, e - 150);
+				}
+				break;
+
+			case 5: // Long
+				int high = (int) ReadU32(file);
+				int low = (int) ReadU32(file);
+				long ret = ((long) high << 32) | low;
+				index += 1;
+				break;
+
+			case 6: // Double
+				int dhigh = (int) ReadU32(file);
+                                int dlow = (int) ReadU32(file);
+                                long dbits = ((long) dhigh << 32) | dlow;
+				double dres = 0.0;
+
+				if (dbits == 0x7ff0000000000000L) 
+					dres = INFINITY;
+				else if (dbits == 0xfff0000000000000L)
+					dres = -INFINITY;
+				else if ((dbits > 0x7ff0000000000000L && 
+						dbits < 0x7fffffffffffffffL) ||
+						(dbits > 0xfff0000000000000L &&
+						 dbits < 0xffffffffffffffffL))
+					dres = NAN;
+				else {
+					int s = ((dbits >> 63) == 0) ? 1 : -1;
+					int e = (int)((dbits >> 52) & 0x7ffL);
+					long m = (e == 0) ? (dbits & 0xfffffffffffffL) << 1 :
+						(dbits & 0xfffffffffffffL) | 0x10000000000000L;
+					dres = s * m * pow(2, e - 1075);
+				}
+				index += 1;
+				break;
+
 			case 7: // Class
 				u16 class = ReadU16(file);
 				check_index(class, file->ConstantPoolCount);
 				break;
 
+			case 8: // String
+				u16 string = ReadU16(file);
+				check_index(string, file->ConstantPoolCount);
+				break;
+
+			case 9:  // FieldRef
 			case 10: // MethodRef
+			case 11: // InterfaceMethodRef
 				u16 base_class = ReadU16(file);
 				u16 name_type = ReadU16(file);
 				check_index(base_class, file->ConstantPoolCount);
@@ -126,8 +189,26 @@ int ParseFile (struct ClassFile* file, u16 version) {
 				u16 name = ReadU16(file);
 				u16 type = ReadU16(file);
 				check_index(name, file->ConstantPoolCount);
-				check_index(name, file->ConstantPoolCount);
+				check_index(type, file->ConstantPoolCount);
 				break;
+
+			case 15: // MethodHandle
+				 u8 ref_kind = ReadU8(file);
+				 u16 ref_index = ReadU8(file);
+				 check_index(ref_index, file->ConstantPoolCount);
+				 break;
+
+			case 16: // MethodType
+				 u16 desc = ReadU16(file);
+				 check_index(desc, file->ConstantPoolCount);
+				 break;
+
+			case 17: // InvokeDynamic
+				 u16 bootstrap = ReadU16(file);
+				 u16 nt_index = ReadU16(file);
+				 check_index(nt_index, file->ConstantPoolCount);
+				 break;
+
 			default: 
 				log("Unknown constant pool tag = %d\n", tag);
 				return -4;
