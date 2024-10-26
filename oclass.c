@@ -80,6 +80,12 @@ static u64 ReadU64 (struct ClassFile* file) {
 	return -4; \
 }
 
+struct offset {
+	u32 low;
+	u32 high;
+	u32 flags;
+};
+
 int ParseFile (struct ClassFile* file, u16 version) {
 	if (!file) 
 		return -1;
@@ -96,9 +102,13 @@ int ParseFile (struct ClassFile* file, u16 version) {
 
 	file->ConstantPoolCount = ReadU16(file);
 	log("Constant pool length = %d\n", file->ConstantPoolCount);
-	u64 cp_begin = file->Offset;
+
+	u32 cp_start = file->Offset;
+	struct offset* off = malloc(sizeof(struct offset) * file->ConstantPoolCount);
 	for (u8 index = 1; index < file->ConstantPoolCount; index++) {
 		u8 tag = ReadU8(file);
+		off[index].low = file->Offset;
+		off[index].flags = tag;
 		log("Parsing tag = %d at index = %d\n", tag, index);
 		switch (tag) {
 			case 1: // Utf8
@@ -138,8 +148,10 @@ int ParseFile (struct ClassFile* file, u16 version) {
 				int high = (int) ReadU32(file);
 				int low = (int) ReadU32(file);
 				long ret = ((long) high << 32) | low;
+				off[index].high = file->Offset - 1;
 				index += 1;
-				break;
+				off[index].flags = 0;
+				continue;
 
 			case 6: // Double
 				int dhigh = (int) ReadU32(file);
@@ -163,8 +175,10 @@ int ParseFile (struct ClassFile* file, u16 version) {
 						(dbits & 0xfffffffffffffL) | 0x10000000000000L;
 					dres = s * m * pow(2, e - 1075);
 				}
+				off[index].high = file->Offset - 1;
 				index += 1;
-				break;
+                                off[index].flags = 0;
+				continue;
 
 			case 7: // Class
 				u16 class = ReadU16(file);
@@ -213,12 +227,14 @@ int ParseFile (struct ClassFile* file, u16 version) {
 				log("Unknown constant pool tag = %d\n", tag);
 				return -4;
 		}
+
+		off[index].high = file->Offset - 1;
 	}
-	u64 cp_end = file->Offset;
-	log("Constant Pool Length = %ld\n", cp_end - cp_begin + 1);
+
+	u32 cp_length = off[file->ConstantPoolCount - 1].high - cp_start + 1;
+	log("Constant Pool Length = %u\n", cp_length);
 
 	file->Access = ReadU16(file);
-
 	file->This = ReadU16(file);
 	check_index(file->This, file->ConstantPoolCount);
 	file->Super = ReadU16(file);
