@@ -3,7 +3,12 @@
 #include <stdio.h>
 #include <math.h>
 
-#define log(...) printf(__VA_ARGS__);
+#ifdef DEBUG
+#define log(...) printf("LOG:" __VA_ARGS__);
+#else
+#define log(...)
+#endif
+
 struct ConstantPool {
 };
 
@@ -35,10 +40,11 @@ struct ClassFile {
 	u64 Length;
 	u64 Offset;
 	u8* File;
+	void (*Handler) (u8);
 };
 
-struct ClassFile* InitClass (u8* File, u64 Length) {
-	if (!File || !Length) 
+struct ClassFile* InitClass (u8* File, u64 Length, void (*Handler) (u8)) {
+	if (!File || !Length || !Handler) 
 		return ((void*)-1);
 
 	struct ClassFile* class = malloc(sizeof(struct ClassFile));
@@ -48,15 +54,28 @@ struct ClassFile* InitClass (u8* File, u64 Length) {
 	class->File = File;
 	class->Length = Length;
 	class->Offset = 0;
+	class->Handler = Handler;
 
 	return class;
 }
 
 static u8 ReadU8 (struct ClassFile* file) {
+	if (file->Offset >= file->Length) {
+		log("Read to offset greater than size of file\n");
+		file->Handler(ERROR_TRUNCATED_FILE);
+		return 0xFF;
+	}
+
 	return file->File[file->Offset++];
 }
 
 static u16 ReadU16 (struct ClassFile* file) {
+	if (file->Offset >= file->Length || file->Offset + 1 >= file->Length) {
+		log("Read to offset greater than size of file \n");
+		file->Handler(ERROR_TRUNCATED_FILE);
+		return 0xFFFF;
+	}
+
 	u16 r1 = ((u16)file->File[file->Offset]  << 8) | 
 		file->File[file->Offset + 1];
 	file->Offset += 2;
@@ -75,10 +94,20 @@ static u64 ReadU64 (struct ClassFile* file) {
 	return (r1 << 32) | r2;
 }
 
-#define check_index(index, length) if (!index || index > length - 1) {\
+#define check_index(index, length, file) if (!index || index > length - 1) {\
 	log("Invalid constant pool index = %d\n", index); \
+	file->Handler(ERROR_CLASS_FILE_FORMAT); \
 	return -4; \
 }
+
+#define validate_index(index, off, expected, this, file) if (off[index].flags != expected) {\
+	log("Invalid constant pool index reference at index %d\n", this); \
+	file->Handler(ERROR_CLASS_FILE_FORMAT); \
+	return -4; \
+}
+
+#define fix_endian(file, off, type, val) \
+	*((type*)(file + off - sizeof(type))) = val;
 
 struct offset {
 	u32 low;
@@ -96,8 +125,11 @@ int ParseFile (struct ClassFile* file, u16 version) {
 	
 	file->Minor = ReadU16(file); // skip minor version
 	file->Major = ReadU16(file);
-	if (file->Major > MAX_VERSION || file->Major > version)
+	if (file->Major > MAX_VERSION || file->Major > version) {
+		file->Handler(ERROR_CLASS_FILE_VERSION);
 		return -3;
+	}
+
 	log("Class file version %d.%d\n", file->Major, file->Minor);
 
 	file->ConstantPoolCount = ReadU16(file);
@@ -113,6 +145,7 @@ int ParseFile (struct ClassFile* file, u16 version) {
 		switch (tag) {
 			case 1: // Utf8
 				u16 length = ReadU16(file);
+				fix_endian(file->File, file->Offset, u16, length);
 				if (file->Offset + length >= file->Length) {
 					log("Utf8 String too long\n");
 					return -4;
@@ -123,6 +156,7 @@ int ParseFile (struct ClassFile* file, u16 version) {
 
 			case 3: // Integer
 				int ele = (int) ReadU32(file);
+				fix_endian(file->File, file->Offset, u32, ele);
 				break;
 			
 			case 4: // Float
@@ -142,6 +176,7 @@ int ParseFile (struct ClassFile* file, u16 version) {
 						(bits & 0x7fffff) | 0x800000;
 					res = s * m * pow(2, e - 150);
 				}
+				fix_endian(file->File, file->Offset, u32, res);
 				break;
 
 			case 5: // Long
@@ -151,6 +186,7 @@ int ParseFile (struct ClassFile* file, u16 version) {
 				off[index].high = file->Offset - 1;
 				index += 1;
 				off[index].flags = 0;
+				fix_endian(file->File, file->Offset, u64, ret);
 				continue;
 
 			case 6: // Double
@@ -178,49 +214,65 @@ int ParseFile (struct ClassFile* file, u16 version) {
 				off[index].high = file->Offset - 1;
 				index += 1;
                                 off[index].flags = 0;
+				fix_endian(file->File, file->Offset, u64, dres);
 				continue;
 
 			case 7: // Class
 				u16 class = ReadU16(file);
-				check_index(class, file->ConstantPoolCount);
+				fix_endian(file->File, file->Offset, u16, class);
+				check_index(class, file->ConstantPoolCount, file);
 				break;
 
 			case 8: // String
 				u16 string = ReadU16(file);
-				check_index(string, file->ConstantPoolCount);
+				fix_endian(file->File, file->Offset, u16, string);
+				check_index(string, file->ConstantPoolCount, file);
 				break;
 
 			case 9:  // FieldRef
 			case 10: // MethodRef
 			case 11: // InterfaceMethodRef
 				u16 base_class = ReadU16(file);
+				fix_endian(file->File, file->Offset, u16, base_class);
 				u16 name_type = ReadU16(file);
-				check_index(base_class, file->ConstantPoolCount);
-				check_index(name_type, file->ConstantPoolCount);
+				fix_endian(file->File, file->Offset, u16, name_type);
+				check_index(base_class, file->ConstantPoolCount, file);
+				check_index(name_type, file->ConstantPoolCount, file);
 				break;
 
 			case 12: // NameAndType
 				u16 name = ReadU16(file);
+				fix_endian(file->File, file->Offset, u16, name);
 				u16 type = ReadU16(file);
-				check_index(name, file->ConstantPoolCount);
-				check_index(type, file->ConstantPoolCount);
+				fix_endian(file->File, file->Offset, u16, type);
+				check_index(name, file->ConstantPoolCount, file);
+				check_index(type, file->ConstantPoolCount, file);
 				break;
 
 			case 15: // MethodHandle
 				 u8 ref_kind = ReadU8(file);
-				 u16 ref_index = ReadU8(file);
-				 check_index(ref_index, file->ConstantPoolCount);
+				 if (ref_kind < 1 || ref_kind > 9) {
+					 log("Reference kind is unknown\n");
+					 file->Handler(ERROR_CLASS_FILE_FORMAT);
+					 return -4;
+				 }
+				 u16 ref_index = ReadU16(file);
+				 fix_endian(file->File, file->Offset, u16, ref_index);
+				 check_index(ref_index, file->ConstantPoolCount, file);
 				 break;
 
 			case 16: // MethodType
 				 u16 desc = ReadU16(file);
-				 check_index(desc, file->ConstantPoolCount);
+				 fix_endian(file->File, file->Offset, u16, desc);
+				 check_index(desc, file->ConstantPoolCount, file);
 				 break;
 
 			case 17: // InvokeDynamic
 				 u16 bootstrap = ReadU16(file);
+				 fix_endian(file->File, file->Offset, u16, bootstrap);
 				 u16 nt_index = ReadU16(file);
-				 check_index(nt_index, file->ConstantPoolCount);
+				 fix_endian(file->File, file->Offset, u16, nt_index);
+				 check_index(nt_index, file->ConstantPoolCount, file);
 				 break;
 
 			default: 
@@ -231,14 +283,66 @@ int ParseFile (struct ClassFile* file, u16 version) {
 		off[index].high = file->Offset - 1;
 	}
 
+	for (int i = 1; i < file->ConstantPoolCount; i++) {
+		switch (off[i].flags) {
+			case 7:
+			case 8:
+			case 16:
+			{
+				u16 cl = *(((u16*)(file->File + off[i].low)));
+				validate_index(cl, off, ConstantUTF8, i, file);
+				break;
+			}
+			case 9:
+			case 10:
+			case 11: 
+			{
+				u16 cl = *(((u16*)(file->File + off[i].low)));
+				u16 name = *(((u16*)(file->File + off[i].low + 2)));
+				validate_index(cl, off, ConstantClass, i, file);
+				validate_index(name, off, ConstantNameType, i, file);
+				break;
+			}
+			case 12:
+			{
+				u16 name = *(((u16*)(file->File + off[i].low)));
+                                u16 desc = *(((u16*)(file->File + off[i].low + 2)));
+                                validate_index(name, off, ConstantUTF8, i, file);
+                                validate_index(desc, off, ConstantUTF8, i, file);
+                                break;
+			}
+			case 15:
+			{
+				u16 kind = *(((u16*)(file->File + off[i].low)));
+                                u16 index = *(((u16*)(file->File + off[i].low + 2)));
+				if (kind >= 1 && kind <= 4) 
+					validate_index(kind, off, ConstantField, i, file)
+				else if (kind >= 5 && kind <= 8)
+					validate_index(kind, off, ConstantMethod, i, file)
+				else
+					validate_index(kind, off, ConstantInterface, i, file)
+				break;
+			}
+			case 17:
+			{
+				u16 idx = *(((u16*)(file->File + off[i].low)));
+                                u16 name = *(((u16*)(file->File + off[i].low + 2)));
+                                validate_index(name, off, ConstantNameType, i, file);
+				break;
+			}
+			default: // Nothing to do if not the above tags
+
+		}
+	}
+
 	u32 cp_length = off[file->ConstantPoolCount - 1].high - cp_start + 1;
 	log("Constant Pool Length = %u\n", cp_length);
 
 	file->Access = ReadU16(file);
 	file->This = ReadU16(file);
-	check_index(file->This, file->ConstantPoolCount);
+	check_index(file->This, file->ConstantPoolCount, file);
 	file->Super = ReadU16(file);
-	check_index(file->Super, file->ConstantPoolCount);
+	check_index(file->Super, file->ConstantPoolCount, file);
 
 	file->InterfacesCount = ReadU16(file);
 	if (file->Offset + file->InterfacesCount * sizeof(u16) >= file->Length) {
@@ -247,6 +351,9 @@ int ParseFile (struct ClassFile* file, u16 version) {
 	}
 	file->Interfaces = (u16*)(file->File + file->Offset);
 	log("Number of interfaces = %d\n", file->InterfacesCount);
+	for (int i = 0; i < file->InterfacesCount; i++) {
+		ReadU16(file);
+	}
 
 	file->FieldsCount = ReadU16(file);
 	if (file->Offset + file->FieldsCount * sizeof(u16) >= file->Length) {
