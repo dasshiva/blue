@@ -9,9 +9,6 @@
 #define log(...)
 #endif
 
-struct ConstantPool {
-};
-
 struct Field {
 };
 
