@@ -1,4 +1,6 @@
-public class Hello {
+import java.io.*;
+
+public class Hello implements Serializable {
 	public void Hello() {
 		int a = 13020384;
 		long b = 298342348;

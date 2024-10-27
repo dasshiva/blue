@@ -352,7 +352,13 @@ int ParseFile (struct ClassFile* file, u16 version) {
 	file->Interfaces = (u16*)(file->File + file->Offset);
 	log("Number of interfaces = %d\n", file->InterfacesCount);
 	for (int i = 0; i < file->InterfacesCount; i++) {
-		ReadU16(file);
+		u2 idx = ReadU16(file);
+		check_index(idx, file->ConstantPoolCount, file);
+		if (off[idx].flags != ConstantClass) {
+			log("interface index is not a class\n");
+			file->Handler(ERROR_CLASS_FILE_FORMAT);
+			return -4;
+		}
 	}
 
 	file->FieldsCount = ReadU16(file);
