@@ -12,7 +12,21 @@ struct StringTable* MakeStringTable () {
 }
 
 static u8* ConvertToUTF8 (u8* string, u16 length) {
-	return NULL;
+	u8* ret = malloc(sizeof(u8) * length + 1);
+	/*for (u16 i = 0; i < length; i++) {
+		u8 cp = string[i];
+		if (cp & (1 << 7)) {
+			u8 z = cp & 0x3f;
+			if (string[i + 1] >> 6 == 2) { // 3 byte case 
+				u8 y = (string[i + 1] & 0x3F) << 6;
+				u8 
+			}
+
+		}
+		else 
+			ret[i] = cp; // plain ASCII no conversion needed
+	} */
+	return ret;
 }
 
 void AppendString (struct StringTable* table, u8* string, u16 length, u16 idx) {
