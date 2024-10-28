@@ -146,7 +146,7 @@ u64 GetStringHash (struct StringTable* table, u16 index) {
 		table = table->next;
 	}
 
-	if (table->String) 
+	if (table->PoolIndex == index) 
 		return table->Hash;
 	return 0;
 }
@@ -158,7 +158,52 @@ u8* GetString (struct StringTable* table, u16 index) {
 		table = table->next;
 	}
 
-	if (table->String) // only 1 element
+	if (table->PoolIndex == index) // only 1 element
 		return table->String;
 	return NULL;
 }
+
+struct ConstantTable* MakeConstantTable () {
+	struct ConstantTable* ret = malloc(sizeof(struct ConstantTable));
+	ret->PoolIndex = 0;
+	ret->Data = 0;
+	ret->next = NULL;
+	return ret;
+}
+
+int AppendConstant (struct ConstantTable* table, u16 index, u8 size, u64 data) {
+	if (!table) // Should not happen
+		return 0;
+
+	struct ConstantTable* append = NULL;
+	if (!table->PoolIndex) {
+		table->PoolIndex = index;
+		append = table;
+	}
+	else {
+		while (table->next) {
+			table = table->next;
+		}
+		table->next = malloc(sizeof(struct ConstantTable));
+		table->next->PoolIndex = index;
+		append = table->next;
+	}
+
+	append->next = NULL;
+	append->Data = data;
+	append->size = size;
+	return 1;
+}
+
+u64 GetConstant (struct ConstantTable* table, u16 index) {
+	while (table->next) {
+		if (table->PoolIndex == index)
+			return table->Data;
+		table = table->next;
+	}
+
+	if (table->PoolIndex == index) // only 1 element
+		return table->Data;
+	return ~0UL;
+}
+

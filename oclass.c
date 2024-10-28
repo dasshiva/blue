@@ -34,6 +34,7 @@ struct ClassFile {
 	u64 Offset;
 	u8* File;
 	struct StringTable* strtable;
+	struct ConstantTable* constable;
 	void (*Handler) (u8);
 };
 
@@ -130,7 +131,8 @@ int ParseFile (struct ClassFile* file, u16 version) {
 	log("Constant pool length = %d\n", file->ConstantPoolCount);
 
 	u32 cp_start = file->Offset;
-	file->strtable = MakeStringTable(); 
+	file->strtable = MakeStringTable();
+	file->constable = MakeConstantTable();
 	struct offset* off = malloc(sizeof(struct offset) * file->ConstantPoolCount);
 	for (u8 index = 1; index < file->ConstantPoolCount; index++) {
 		u8 tag = ReadU8(file);
@@ -157,6 +159,7 @@ int ParseFile (struct ClassFile* file, u16 version) {
 			case 3: // Integer
 				int ele = (int) ReadU32(file);
 				fix_endian(file->File, file->Offset, u32, ele);
+				AppendConstant(file->constable, index, 32, ele);
 				break;
 			
 			case 4: // Float
@@ -177,6 +180,7 @@ int ParseFile (struct ClassFile* file, u16 version) {
 					res = s * m * pow(2, e - 150);
 				}
 				fix_endian(file->File, file->Offset, u32, res);
+				AppendConstant(file->constable, index, 32, bits);
 				break;
 
 			case 5: // Long
@@ -187,6 +191,7 @@ int ParseFile (struct ClassFile* file, u16 version) {
 				index += 1;
 				off[index].flags = 0;
 				fix_endian(file->File, file->Offset, u64, ret);
+				AppendConstant(file->constable, index, 64, ret);
 				continue;
 
 			case 6: // Double
@@ -215,6 +220,7 @@ int ParseFile (struct ClassFile* file, u16 version) {
 				index += 1;
                                 off[index].flags = 0;
 				fix_endian(file->File, file->Offset, u64, dres);
+				AppendConstant(file->constable, index, 64, dbits);
 				continue;
 
 			case 7: // Class

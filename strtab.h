@@ -16,12 +16,14 @@ u8* GetString (struct StringTable* table, u16 index);
 void FreeStringTable (struct StringTable* table);
 
 struct ConstantTable {
+	u64 Data;
+	struct ConstantTable* next;
 	u16 PoolIndex;
-	u64 data;
+	u8 size;
 };
 struct ConstantTable* MakeConstantTable ();
-void AppendConstant (struct ConstantTable* table, u16 index);
-void GetConstant (struct ConstantTable* table, u16 index);
+int AppendConstant (struct ConstantTable* table, u16 index, u8 size, u64 data);
+u64 GetConstant (struct ConstantTable* table, u16 index);
 void FreeConstantTable (struct ConstantTable* table);
 
 #endif
