@@ -16,6 +16,9 @@ void handler (u8 code) {
 		case ERROR_CLASS_FILE_VERSION:
 			printf("Unsupported class file version\n");
 			break;
+		case ERROR_UTF8_ENCODING:
+			printf("Invalid UTF-8 encoded string\n");
+			break;
 		default:
 			printf("Unknown error\n");
 	}

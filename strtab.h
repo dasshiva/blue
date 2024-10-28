@@ -10,7 +10,7 @@ struct StringTable {
 	struct StringTable* next;
 };
 struct StringTable* MakeStringTable ();
-void AppendString (struct StringTable* table, u8* string, u16 length, u16 pool_index);
+int AppendString (struct StringTable* table, u8* string, u16 length, u16 pool_index);
 u64 GetStringHash (struct StringTable* table, u16 index);
 u8* GetString (struct StringTable* table, u16 index);
 void FreeStringTable (struct StringTable* table);

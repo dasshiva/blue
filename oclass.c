@@ -1,13 +1,9 @@
 #include <stdlib.h>
-#include "oclass.h"
-#include <stdio.h>
 #include <math.h>
-
-#ifdef DEBUG
-#define log(...) printf("LOG:" __VA_ARGS__);
-#else
-#define log(...)
-#endif
+#include "oclass.h"
+#include "strtab.h"
+#include "utils.h"
+#include <stdio.h>
 
 struct Field {
 };
@@ -37,6 +33,7 @@ struct ClassFile {
 	u64 Length;
 	u64 Offset;
 	u8* File;
+	struct StringTable* strtable;
 	void (*Handler) (u8);
 };
 
@@ -133,6 +130,7 @@ int ParseFile (struct ClassFile* file, u16 version) {
 	log("Constant pool length = %d\n", file->ConstantPoolCount);
 
 	u32 cp_start = file->Offset;
+	file->strtable = MakeStringTable(); 
 	struct offset* off = malloc(sizeof(struct offset) * file->ConstantPoolCount);
 	for (u8 index = 1; index < file->ConstantPoolCount; index++) {
 		u8 tag = ReadU8(file);
@@ -148,6 +146,11 @@ int ParseFile (struct ClassFile* file, u16 version) {
 					return -4;
 				}
 				u8* utf8_string = file->File + file->Offset;
+				if (!AppendString(file->strtable, utf8_string, length, index)) {
+					file->Handler(ERROR_UTF8_ENCODING);
+					return 0;
+				}
+				//printf("0x%lx", GetStringHash(file->strtable, index));
 				file->Offset += length;
 				break;
 
@@ -349,7 +352,7 @@ int ParseFile (struct ClassFile* file, u16 version) {
 	file->Interfaces = (u16*)(file->File + file->Offset);
 	log("Number of interfaces = %d\n", file->InterfacesCount);
 	for (int i = 0; i < file->InterfacesCount; i++) {
-		u2 idx = ReadU16(file);
+		u32 idx = ReadU16(file);
 		check_index(idx, file->ConstantPoolCount, file);
 		if (off[idx].flags != ConstantClass) {
 			log("interface index is not a class\n");
@@ -366,13 +369,14 @@ int ParseFile (struct ClassFile* file, u16 version) {
         file->Fields = (struct Field*)(file->File + file->Offset);
 	log("Number of fields = %d\n", file->FieldsCount);
 
+	/*
 	file->MethodsCount = ReadU16(file);
 	if (file->Offset + file->MethodsCount * sizeof(u16) >= file->Length) {
                 log("There are more methods than the file can possibly have\n");
                 return -4;
         }
         file->Methods = (struct Methods*)(file->File + file->Offset);
-	log("Number of methods = %d\n", file->MethodsCount);
+	log("Number of methods = %d\n", file->MethodsCount); */
 
 	return 1;
 }
