@@ -164,22 +164,6 @@ int ParseFile (struct ClassFile* file, u16 version) {
 			
 			case 4: // Float
 				int bits = (int) ReadU32(file);
-				float res = 0.0f;
-				if (bits == 0x7f800000)
-					res = INFINITY;
-				else if (bits == 0xff800000)
-					res = -INFINITY;
-				else if ((bits > 0x7f800000 && bits < 0x7fffffff) ||
-						(bits > 0xff800001 && bits < 0xffffffff))
-					res = NAN;
-				else {
-					int s = ((bits >> 31) == 0) ? 1 : -1;
-					int e = ((bits >> 23) & 0xff);
-					int m = (e == 0) ? (bits & 0x7fffff) << 1 :
-						(bits & 0x7fffff) | 0x800000;
-					res = s * m * pow(2, e - 150);
-				}
-				fix_endian(file->File, file->Offset, u32, res);
 				AppendConstant(file->constable, index, 32, bits);
 				break;
 
@@ -198,28 +182,9 @@ int ParseFile (struct ClassFile* file, u16 version) {
 				int dhigh = (int) ReadU32(file);
                                 int dlow = (int) ReadU32(file);
                                 long dbits = ((long) dhigh << 32) | dlow;
-				double dres = 0.0;
-
-				if (dbits == 0x7ff0000000000000L) 
-					dres = INFINITY;
-				else if (dbits == 0xfff0000000000000L)
-					dres = -INFINITY;
-				else if ((dbits > 0x7ff0000000000000L && 
-						dbits < 0x7fffffffffffffffL) ||
-						(dbits > 0xfff0000000000000L &&
-						 dbits < 0xffffffffffffffffL))
-					dres = NAN;
-				else {
-					int s = ((dbits >> 63) == 0) ? 1 : -1;
-					int e = (int)((dbits >> 52) & 0x7ffL);
-					long m = (e == 0) ? (dbits & 0xfffffffffffffL) << 1 :
-						(dbits & 0xfffffffffffffL) | 0x10000000000000L;
-					dres = s * m * pow(2, e - 1075);
-				}
 				off[index].high = file->Offset - 1;
 				index += 1;
                                 off[index].flags = 0;
-				fix_endian(file->File, file->Offset, u64, dres);
 				AppendConstant(file->constable, index, 64, dbits);
 				continue;
 
