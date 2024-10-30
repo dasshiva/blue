@@ -5,14 +5,27 @@
 #include "utils.h"
 #include <stdio.h>
 
-struct Field {
-};
-
-struct Method {
+struct offset {
+	u32 low;
+	u32 high;
+	u32 flags;
 };
 
 struct Attributes {
+	u8 tag; // Identifies the attribute
 };
+
+struct _MethodOrField {
+	u16 Access;
+	u16 Name;
+	u16 Descriptor;
+	u16 AttributeCount;
+	struct Attributes* Attributes;
+	struct offset* AttributeMap;
+};
+
+typedef struct _MethodOrField Field;
+typedef struct _MethodOrField Method;
 
 struct ClassFile {
 	u16 Minor;
@@ -25,11 +38,12 @@ struct ClassFile {
 	u16 InterfacesCount;
 	u16* Interfaces;
 	u16 FieldsCount;
-	struct Field* Fields;
+	Field* Fields;
 	u16 MethodsCount;
-	struct Methods* Methods;
+	Method* Methods;
 	u16 AttributesCount;
 	struct Attributes* Attributes;
+	struct offset* AttributesMap;
 	u64 Length;
 	u64 Offset;
 	u8* File;
@@ -104,11 +118,6 @@ static u64 ReadU64 (struct ClassFile* file) {
 #define fix_endian(file, off, type, val) \
 	*((type*)(file + off - sizeof(type))) = val;
 
-struct offset {
-	u32 low;
-	u32 high;
-	u32 flags;
-};
 
 int ParseFile (struct ClassFile* file, u16 version) {
 	if (!file) 
@@ -335,10 +344,32 @@ int ParseFile (struct ClassFile* file, u16 version) {
 	file->FieldsCount = ReadU16(file);
 	if (file->Offset + file->FieldsCount * sizeof(u16) >= file->Length) {
                 log("There are more fields than the file can possibly have\n");
+		file->Handler(ERROR_CLASS_FILE_FORMAT);
                 return -4;
         }
-        file->Fields = (struct Field*)(file->File + file->Offset);
+        file->Fields = (Field*)(file->File + file->Offset);
 	log("Number of fields = %d\n", file->FieldsCount);
+	for (int i = 0; i < file->FieldsCount; i++) {
+		Field this = file->Fields[i];
+		this.Access = ReadU16(file);
+		this.Name = ReadU16(file);
+		this.Descriptor = ReadU16(file);
+		check_index(this.Name, file->ConstantPoolCount, file);
+		check_index(this.Descriptor, file->ConstantPoolCount, file);
+		validate_index(this.Name, off, ConstantUTF8, i, file);
+		validate_index(this.Descriptor, off, ConstantUTF8, i, file);
+		this.AttributeCount = ReadU16(file);
+		this.AttributeMap = malloc(sizeof(struct offset) * 
+				this.AttributeCount);
+		for (int j = 0; j < this.AttributeCount; j++) {
+			printf("Hello");
+			u16 name = ReadU16(file);
+			check_index(name, file->ConstantPoolCount, file);
+			validate_index(name, off, ConstantUTF8, i, file);
+			u64 hash = GetStringHash(file->strtable, name);
+			
+		}
+	}
 
 	/*
 	file->MethodsCount = ReadU16(file);
