@@ -4,6 +4,7 @@
 #include "strtab.h"
 #include "utils.h"
 #include <stdio.h>
+#include "precomp.h"
 
 struct offset {
 	u32 low;
@@ -362,23 +363,45 @@ int ParseFile (struct ClassFile* file, u16 version) {
 		this.AttributeMap = malloc(sizeof(struct offset) * 
 				this.AttributeCount);
 		for (int j = 0; j < this.AttributeCount; j++) {
-			printf("Hello");
 			u16 name = ReadU16(file);
 			check_index(name, file->ConstantPoolCount, file);
 			validate_index(name, off, ConstantUTF8, i, file);
 			u64 hash = GetStringHash(file->strtable, name);
-			
+			u32 size = ReadU32(file);
+			if (file->Offset + size >= file->Length) {
+				log("Attribute too large to fit\n");
+				file->Handler(ERROR_CLASS_FILE_FORMAT);
+			}
+			switch (hash) {
+				case Synthetic:
+				case Deprecated: break;
+				// TODO: Implement these properly
+				case ConstantValue: {
+					u16 index = ReadU16(file);
+					check_index(index, file->ConstantPoolCount, file);
+					break;
+				}
+
+				case Signature: {
+					u16 index = ReadU16(file);
+					check_index(index, file->ConstantPoolCount, file);
+					break;
+				}
+				default: {
+					log("Unknown field attribute %s\n", GetString(file->strtable, name));
+					file->Offset += size;
+				}
+			}
 		}
 	}
 
-	/*
 	file->MethodsCount = ReadU16(file);
 	if (file->Offset + file->MethodsCount * sizeof(u16) >= file->Length) {
                 log("There are more methods than the file can possibly have\n");
                 return -4;
         }
         file->Methods = (struct Methods*)(file->File + file->Offset);
-	log("Number of methods = %d\n", file->MethodsCount); */
+	log("Number of methods = %d\n", file->MethodsCount); 
 
 	return 1;
 }

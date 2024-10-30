@@ -1,6 +1,7 @@
 import java.io.*;
 
 public class Hello implements Serializable {
+	@Deprecated
 	private static long serialVersionID = 0xCAFEBABE;
 	public Object here;
 	//public static long here1 = 100;
