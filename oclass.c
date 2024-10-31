@@ -33,6 +33,7 @@ struct ClassFile {
 	u16 Major;
 	u16 ConstantPoolCount;
 	struct ConstantPool* ConstantPool;
+	struct offset* ConstantPoolMap;
 	u16 Access;
 	u16 This;
 	u16 Super;
@@ -107,47 +108,32 @@ static u64 ReadU64 (struct ClassFile* file) {
 #define check_index(index, length, file) if (!index || index > length - 1) {\
 	log("Invalid constant pool index = %d\n", index); \
 	file->Handler(ERROR_CLASS_FILE_FORMAT); \
-	return -4; \
+	return -1; \
 }
 
 #define validate_index(index, off, expected, this, file) if (off[index].flags != expected) {\
 	log("Invalid constant pool index reference at index %d\n", this); \
 	file->Handler(ERROR_CLASS_FILE_FORMAT); \
-	return -4; \
+	return -1; \
 }
 
 #define fix_endian(file, off, type, val) \
 	*((type*)(file + off - sizeof(type))) = val;
 
 
-int ParseFile (struct ClassFile* file, u16 version) {
-	if (!file) 
-		return -1;
-	if (version > MAX_VERSION) 
-		return 0;
-	if (ReadU32(file) != JAVA_MAGIC) 
-		return -2;
-	
-	file->Minor = ReadU16(file); // skip minor version
-	file->Major = ReadU16(file);
-	if (file->Major > MAX_VERSION || file->Major > version) {
-		file->Handler(ERROR_CLASS_FILE_VERSION);
-		return -3;
-	}
-
-	log("Class file version %d.%d\n", file->Major, file->Minor);
-
+static int ParseConstantPool (struct ClassFile* file) {
 	file->ConstantPoolCount = ReadU16(file);
 	log("Constant pool length = %d\n", file->ConstantPoolCount);
 
 	u32 cp_start = file->Offset;
 	file->strtable = MakeStringTable();
 	file->constable = MakeConstantTable();
-	struct offset* off = malloc(sizeof(struct offset) * file->ConstantPoolCount);
+	file->ConstantPoolMap = malloc(sizeof(struct offset) * file->ConstantPoolCount);
+
 	for (u8 index = 1; index < file->ConstantPoolCount; index++) {
 		u8 tag = ReadU8(file);
-		off[index].low = file->Offset;
-		off[index].flags = tag;
+		file->ConstantPoolMap[index].low = file->Offset;
+		file->ConstantPoolMap[index].flags = tag;
 		log("Parsing tag = %d at index = %d\n", tag, index);
 		switch (tag) {
 			case 1: // Utf8
@@ -181,9 +167,9 @@ int ParseFile (struct ClassFile* file, u16 version) {
 				int high = (int) ReadU32(file);
 				int low = (int) ReadU32(file);
 				long ret = ((long) high << 32) | low;
-				off[index].high = file->Offset - 1;
+				file->ConstantPoolMap[index].high = file->Offset - 1;
 				index += 1;
-				off[index].flags = 0;
+				file->ConstantPoolMap[index].flags = 0;
 				fix_endian(file->File, file->Offset, u64, ret);
 				AppendConstant(file->constable, index, 64, ret);
 				continue;
@@ -192,9 +178,9 @@ int ParseFile (struct ClassFile* file, u16 version) {
 				int dhigh = (int) ReadU32(file);
                                 int dlow = (int) ReadU32(file);
                                 long dbits = ((long) dhigh << 32) | dlow;
-				off[index].high = file->Offset - 1;
+				file->ConstantPoolMap[index].high = file->Offset - 1;
 				index += 1;
-                                off[index].flags = 0;
+                                file->ConstantPoolMap[index].flags = 0;
 				AppendConstant(file->constable, index, 64, dbits);
 				continue;
 
@@ -258,57 +244,62 @@ int ParseFile (struct ClassFile* file, u16 version) {
 
 			default: 
 				log("Unknown constant pool tag = %d\n", tag);
-				return -4;
+				return -1;
 		}
 
-		off[index].high = file->Offset - 1;
+		file->ConstantPoolMap[index].high = file->Offset - 1;
 	}
 
+	return 1;
+
+}
+
+static int ValidateConstantPool (struct ClassFile* file) {
 	for (int i = 1; i < file->ConstantPoolCount; i++) {
-		switch (off[i].flags) {
+		switch (file->ConstantPoolMap[i].flags) {
 			case 7:
 			case 8:
 			case 16:
 			{
-				u16 cl = *(((u16*)(file->File + off[i].low)));
-				validate_index(cl, off, ConstantUTF8, i, file);
+				u16 cl = *(((u16*)(file->File + file->ConstantPoolMap[i].low)));
+				validate_index(cl, file->ConstantPoolMap, ConstantUTF8, i, file);
 				break;
 			}
 			case 9:
 			case 10:
 			case 11: 
 			{
-				u16 cl = *(((u16*)(file->File + off[i].low)));
-				u16 name = *(((u16*)(file->File + off[i].low + 2)));
-				validate_index(cl, off, ConstantClass, i, file);
-				validate_index(name, off, ConstantNameType, i, file);
+				u16 cl = *(((u16*)(file->File + file->ConstantPoolMap[i].low)));
+				u16 name = *(((u16*)(file->File + file->ConstantPoolMap[i].low + 2)));
+				validate_index(cl, file->ConstantPoolMap, ConstantClass, i, file);
+				validate_index(name, file->ConstantPoolMap, ConstantNameType, i, file);
 				break;
 			}
 			case 12:
 			{
-				u16 name = *(((u16*)(file->File + off[i].low)));
-                                u16 desc = *(((u16*)(file->File + off[i].low + 2)));
-                                validate_index(name, off, ConstantUTF8, i, file);
-                                validate_index(desc, off, ConstantUTF8, i, file);
+				u16 name = *(((u16*)(file->File + file->ConstantPoolMap[i].low)));
+                                u16 desc = *(((u16*)(file->File + file->ConstantPoolMap[i].low + 2)));
+                                validate_index(name, file->ConstantPoolMap, ConstantUTF8, i, file);
+                                validate_index(desc, file->ConstantPoolMap, ConstantUTF8, i, file);
                                 break;
 			}
 			case 15:
 			{
-				u16 kind = *(((u16*)(file->File + off[i].low)));
-                                u16 index = *(((u16*)(file->File + off[i].low + 2)));
+				u16 kind = *(((u16*)(file->File + file->ConstantPoolMap[i].low)));
+                                u16 index = *(((u16*)(file->File + file->ConstantPoolMap[i].low + 2)));
 				if (kind >= 1 && kind <= 4) 
-					validate_index(kind, off, ConstantField, i, file)
+					validate_index(kind, file->ConstantPoolMap, ConstantField, i, file)
 				else if (kind >= 5 && kind <= 8)
-					validate_index(kind, off, ConstantMethod, i, file)
+					validate_index(kind, file->ConstantPoolMap, ConstantMethod, i, file)
 				else
-					validate_index(kind, off, ConstantInterface, i, file)
+					validate_index(kind, file->ConstantPoolMap, ConstantInterface, i, file)
 				break;
 			}
 			case 17:
 			{
-				u16 idx = *(((u16*)(file->File + off[i].low)));
-                                u16 name = *(((u16*)(file->File + off[i].low + 2)));
-                                validate_index(name, off, ConstantNameType, i, file);
+				u16 idx = *(((u16*)(file->File + file->ConstantPoolMap[i].low)));
+                                u16 name = *(((u16*)(file->File + file->ConstantPoolMap[i].low + 2)));
+                                validate_index(name, file->ConstantPoolMap, ConstantNameType, i, file);
 				break;
 			}
 			default: // Nothing to do if not the above tags
@@ -316,40 +307,43 @@ int ParseFile (struct ClassFile* file, u16 version) {
 		}
 	}
 
-	u32 cp_length = off[file->ConstantPoolCount - 1].high - cp_start + 1;
-	log("Constant Pool Length = %u\n", cp_length);
+	return 1;
+}
 
-	file->Access = ReadU16(file);
-	file->This = ReadU16(file);
-	check_index(file->This, file->ConstantPoolCount, file);
-	file->Super = ReadU16(file);
-	check_index(file->Super, file->ConstantPoolCount, file);
-
+static int ParseInterfaces (struct ClassFile* file) {
 	file->InterfacesCount = ReadU16(file);
 	if (file->Offset + file->InterfacesCount * sizeof(u16) >= file->Length) {
 		log("There are more interfaces than the file can possibly have\n");
-		return -4;
+		file->Handler(ERROR_CLASS_FILE_FORMAT);
+		return -1;
 	}
+
 	file->Interfaces = (u16*)(file->File + file->Offset);
 	log("Number of interfaces = %d\n", file->InterfacesCount);
 	for (int i = 0; i < file->InterfacesCount; i++) {
 		u32 idx = ReadU16(file);
 		check_index(idx, file->ConstantPoolCount, file);
-		if (off[idx].flags != ConstantClass) {
+		if (file->ConstantPoolMap[idx].flags != ConstantClass) {
 			log("interface index is not a class\n");
 			file->Handler(ERROR_CLASS_FILE_FORMAT);
-			return -4;
+			return -1;
 		}
 	}
 
+	return 1;
+}
+
+static int ParseFields (struct ClassFile* file) {
 	file->FieldsCount = ReadU16(file);
 	if (file->Offset + file->FieldsCount * sizeof(u16) >= file->Length) {
                 log("There are more fields than the file can possibly have\n");
 		file->Handler(ERROR_CLASS_FILE_FORMAT);
-                return -4;
+                return -1;
         }
+
         file->Fields = (Field*)(file->File + file->Offset);
 	log("Number of fields = %d\n", file->FieldsCount);
+
 	for (int i = 0; i < file->FieldsCount; i++) {
 		Field this = file->Fields[i];
 		this.Access = ReadU16(file);
@@ -357,21 +351,24 @@ int ParseFile (struct ClassFile* file, u16 version) {
 		this.Descriptor = ReadU16(file);
 		check_index(this.Name, file->ConstantPoolCount, file);
 		check_index(this.Descriptor, file->ConstantPoolCount, file);
-		validate_index(this.Name, off, ConstantUTF8, i, file);
-		validate_index(this.Descriptor, off, ConstantUTF8, i, file);
+		validate_index(this.Name, file->ConstantPoolMap, ConstantUTF8, i, file);
+		validate_index(this.Descriptor, file->ConstantPoolMap, ConstantUTF8, i, file);
 		this.AttributeCount = ReadU16(file);
 		this.AttributeMap = malloc(sizeof(struct offset) * 
 				this.AttributeCount);
+
 		for (int j = 0; j < this.AttributeCount; j++) {
 			u16 name = ReadU16(file);
 			check_index(name, file->ConstantPoolCount, file);
-			validate_index(name, off, ConstantUTF8, i, file);
+			validate_index(name, file->ConstantPoolMap, ConstantUTF8, i, file);
 			u64 hash = GetStringHash(file->strtable, name);
 			u32 size = ReadU32(file);
 			if (file->Offset + size >= file->Length) {
 				log("Attribute too large to fit\n");
 				file->Handler(ERROR_CLASS_FILE_FORMAT);
+				return -1;
 			}
+
 			switch (hash) {
 				case Synthetic:
 				case Deprecated: break;
@@ -395,13 +392,147 @@ int ParseFile (struct ClassFile* file, u16 version) {
 		}
 	}
 
+	return 1;
+}
+
+static int ParseMethods (struct ClassFile* file) {
 	file->MethodsCount = ReadU16(file);
 	if (file->Offset + file->MethodsCount * sizeof(u16) >= file->Length) {
                 log("There are more methods than the file can possibly have\n");
-                return -4;
+                return -1;
         }
-        file->Methods = (struct Methods*)(file->File + file->Offset);
+        file->Methods = (Method*)(file->File + file->Offset);
 	log("Number of methods = %d\n", file->MethodsCount); 
+
+	for (int i = 0; i < file->MethodsCount; i++) {
+		Method this = file->Methods[i];
+		this.Access = ReadU16(file);
+		this.Name = ReadU16(file);
+		this.Descriptor = ReadU16(file);
+		check_index(this.Name, file->ConstantPoolCount, file);
+		check_index(this.Descriptor, file->ConstantPoolCount, file);
+		validate_index(this.Name, file->ConstantPoolMap, ConstantUTF8, i, file);
+		validate_index(this.Descriptor, file->ConstantPoolMap, ConstantUTF8, i, file);
+		this.AttributeCount = ReadU16(file);
+		this.AttributeMap = malloc(sizeof(struct offset) * 
+				this.AttributeCount);
+
+		for (int j = 0; j < this.AttributeCount; j++) {
+			printf("%s\n", GetString(file->strtable, this.Name));
+			u16 name = ReadU16(file);
+			check_index(name, file->ConstantPoolCount, file);
+			validate_index(name, file->ConstantPoolMap, ConstantUTF8, i, file);
+			u64 hash = GetStringHash(file->strtable, name);
+			u32 size = ReadU32(file);
+			if (file->Offset + size >= file->Length) {
+				log("Attribute too large to fit\n");
+				file->Handler(ERROR_CLASS_FILE_FORMAT);
+				return -1;
+			}
+
+			switch (hash) {
+				case Synthetic:
+				case Deprecated: break;
+				// TODO: Implement these properly
+				case Signature: {
+					u16 index = ReadU16(file);
+					check_index(index, file->ConstantPoolCount, file);
+					break;
+				}
+				default: {
+					log("Unknown method attribute %s\n", GetString(file->strtable, name));
+					file->Offset += size;
+				}
+			}
+		}
+	}
+
+	return 1;
+}
+
+int ParseAttributes (struct ClassFile* file) {
+	file->AttributesCount = ReadU16(file);
+	file->Attributes = (struct Attributes*)(file->File + file->Offset);
+	file->AttributesMap = malloc(sizeof(struct offset) * file->AttributesCount);
+	
+	for (int i = 0; i < file->AttributesCount; i++) {
+		u16 name = ReadU16(file);
+		check_index(name, file->ConstantPoolCount, file);
+		validate_index(name, file->ConstantPoolMap, ConstantUTF8, i, file);
+		u64 hash = GetStringHash(file->strtable, name);
+		u32 size = ReadU32(file);
+
+		if (file->Offset + size > file->Length) {
+			//printf("%ld %ld\n", file->Offset + 2, file->Length);
+			log("Attribute too large to fit\n");
+			file->Handler(ERROR_CLASS_FILE_FORMAT);
+			return -1;
+		}
+
+		switch (hash) {
+			case Synthetic:
+			case Deprecated: break;
+			// TODO: Implement Signature properly
+			case Signature: {
+				u16 index = ReadU16(file);
+				check_index(index, file->ConstantPoolCount, file);
+				break;
+			}
+			case SourceFile: {
+				u16 source = ReadU16(file);
+				check_index(source, file->ConstantPoolCount, file);
+				validate_index(source, file->ConstantPoolMap, ConstantUTF8, i, file);
+				break;
+			}
+			default: {
+				log("Unknown method attribute %s\n", GetString(file->strtable, name));
+				file->Offset += size;
+			}
+		}
+	}
+		
+	return 1;
+}
+
+int ParseFile (struct ClassFile* file, u16 version) {
+	if (!file) 
+		return -1;
+	if (version > MAX_VERSION) 
+		return 0;
+	if (ReadU32(file) != JAVA_MAGIC) 
+		return -2;
+	
+	file->Minor = ReadU16(file); // skip minor version
+	file->Major = ReadU16(file);
+	if (file->Major > MAX_VERSION || file->Major > version) {
+		file->Handler(ERROR_CLASS_FILE_VERSION);
+		return -3;
+	}
+	log("Class file version %d.%d\n", file->Major, file->Minor);
+
+	if (ParseConstantPool(file) < 0) 
+		return 0;
+
+	if (ValidateConstantPool(file) < 0) 
+		return 0;
+
+	file->Access = ReadU16(file);
+	file->This = ReadU16(file);
+	check_index(file->This, file->ConstantPoolCount, file);
+	file->Super = ReadU16(file);
+	check_index(file->Super, file->ConstantPoolCount, file);
+
+	if (ParseInterfaces(file) < 0)
+		return 0;
+
+	if (ParseFields(file) < 0) 
+		return 0;
+
+	if (ParseMethods(file) < 0)
+		return 0;
+
+	if (ParseAttributes(file) < 0)
+		return 0;
 
 	return 1;
 }
