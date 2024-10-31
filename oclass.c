@@ -347,8 +347,11 @@ static int ParseFields (struct ClassFile* file) {
 	for (int i = 0; i < file->FieldsCount; i++) {
 		Field this = file->Fields[i];
 		this.Access = ReadU16(file);
+		fix_endian(file, file->Offset, u16, this.Access);
 		this.Name = ReadU16(file);
+		fix_endian(file, file->Offset, u16, this.Name);
 		this.Descriptor = ReadU16(file);
+		fix_endian(file, file->Offset, u16, this.Descriptor);
 		check_index(this.Name, file->ConstantPoolCount, file);
 		check_index(this.Descriptor, file->ConstantPoolCount, file);
 		validate_index(this.Name, file->ConstantPoolMap, ConstantUTF8, i, file);
@@ -450,8 +453,11 @@ static int ParseMethods (struct ClassFile* file) {
 	for (int i = 0; i < file->MethodsCount; i++) {
 		Method this = file->Methods[i];
 		this.Access = ReadU16(file);
+		fix_endian(file, file->Offset, u16, this.Access);
 		this.Name = ReadU16(file);
+		fix_endian(file, file->Offset, u16, this.Name);
 		this.Descriptor = ReadU16(file);
+		fix_endian(file, file->Offset, u16, this.Descriptor);
 		check_index(this.Name, file->ConstantPoolCount, file);
 		check_index(this.Descriptor, file->ConstantPoolCount, file);
 		validate_index(this.Name, file->ConstantPoolMap, ConstantUTF8, i, file);
@@ -522,15 +528,25 @@ int ParseAttributes (struct ClassFile* file) {
 
 		switch (hash) {
 			case Synthetic:
-			case Deprecated: break;
+				file->AttributesMap[i].flags = ConstantSynthetic;
+				break;
+			case Deprecated:
+			        file->AttributesMap[i].flags = ConstantDeprecated;
+				break;
 			// TODO: Implement Signature properly
 			case Signature: {
+				file->AttributesMap[i].low = file->Offset;
 				u16 index = ReadU16(file);
+				file->AttributesMap[i].high = file->Offset;
+				file->AttributesMap[i].flags = ConstantSignature;
 				check_index(index, file->ConstantPoolCount, file);
 				break;
 			}
 			case SourceFile: {
+				file->AttributesMap[i].low = file->Offset;
 				u16 source = ReadU16(file);
+				file->AttributesMap[i].high = file->Offset;
+				file->AttributesMap[i].flags = ConstantSourceFile;
 				check_index(source, file->ConstantPoolCount, file);
 				validate_index(source, file->ConstantPoolMap, ConstantUTF8, i, file);
 				break;

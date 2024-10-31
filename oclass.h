@@ -49,6 +49,7 @@ enum AttributeIdentifiers {
 	ConstantSignature,
 	ConstantDeprecated,
 	ConstantSynthetic,
-	ConstantCValue
+	ConstantCValue,
+	ConstantSourceFile
 };
 #endif
