@@ -371,16 +371,26 @@ static int ParseFields (struct ClassFile* file) {
 
 			switch (hash) {
 				case Synthetic:
-				case Deprecated: break;
+					this.AttributeMap[j].flags = ConstantSynthetic;
+					break;
+				case Deprecated: 
+					this.AttributeMap[j].flags = ConstantDeprecated;
+					break;
 				// TODO: Implement these properly
 				case ConstantValue: {
+					this.AttributeMap[j].low = file->Offset;
 					u16 index = ReadU16(file);
+					this.AttributeMap[j].high = file->Offset;
+					this.AttributeMap[j].flags = ConstantCValue;
 					check_index(index, file->ConstantPoolCount, file);
 					break;
 				}
 
 				case Signature: {
+					this.AttributeMap[j].low = file->Offset;
 					u16 index = ReadU16(file);
+					this.AttributeMap[j].high = file->Offset;
+					this.AttributeMap[j].flags = ConstantSignature;
 					check_index(index, file->ConstantPoolCount, file);
 					break;
 				}
@@ -396,7 +406,7 @@ static int ParseFields (struct ClassFile* file) {
 }
 
 static int ParseCode (struct ClassFile* file, Method* this, int mapidx) {
-	/*this->AttributeMap[mapidx].low = file->Offset;
+	this->AttributeMap[mapidx].low = file->Offset;
 	this->AttributeMap[mapidx].flags = ConstantCode;
 	u16 max_stack = ReadU16(file);
 	fix_endian(file, file->Offset, u16, max_stack);
@@ -404,14 +414,27 @@ static int ParseCode (struct ClassFile* file, Method* this, int mapidx) {
 	fix_endian(file, file->Offset, u16, max_locals);
 	u32 code_len = ReadU32(file);
 	if (!code_len || code_len > 65536) {
-		log("Code array is null or too large\n");
+		log("Code array is empty or too large\n");
 		file->Handler(ERROR_CLASS_FILE_FORMAT);
 		return -1;
 	}
 	
 	file->Offset += code_len;
 	u16 except_table_len = ReadU16(file);
-	file->Offset += except_table_len * 8; */ 
+	file->Offset += except_table_len * 8; // 8 = size of exception 1 table
+	u16 attributeCount = ReadU16(file);
+	for (int i = 0; i < attributeCount; i++) {
+		u16 name = ReadU16(file);
+		check_index(name, file->ConstantPoolCount, file);
+		validate_index(name, file->ConstantPoolMap, ConstantUTF8, i, file);
+		log("Unknown Code attribute %s\n", GetString(file->strtable, name));
+		u32 size = ReadU32(file);
+		if (file->Offset + size > file->Length) {
+			log("Code attribute too large\n");
+			return -1;
+		}
+		file->Offset += size;
+	}
 	return 1;
 }
 
@@ -452,14 +475,21 @@ static int ParseMethods (struct ClassFile* file) {
 
 			switch (hash) {
 				case Synthetic:
-				case Deprecated: break;
+					this.AttributeMap[j].flags = ConstantSynthetic;
+					break;
+				case Deprecated: 
+					this.AttributeMap[j].flags = ConstantDeprecated;
+					break;
 				// TODO: Implement these properly
 				case Signature: {
+					this.AttributeMap[j].low = file->Offset;
 					u16 index = ReadU16(file);
+					this.AttributeMap[j].high = file->Offset;
+					this.AttributeMap[j].flags = ConstantSignature;
 					check_index(index, file->ConstantPoolCount, file);
 					break;
 				}
-				//case Code: ParseCode(file, &this, j); break;
+				case Code: ParseCode(file, &this, j); break;
 				default: {
 					log("Unknown method attribute %s\n", GetString(file->strtable, name));
 					file->Offset += size;

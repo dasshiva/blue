@@ -45,6 +45,10 @@ enum Errors {
 #define ConstantInvokeDynamic  18
 
 enum AttributeIdentifiers {
-	ConstantCode = 0
+	ConstantCode = 1,
+	ConstantSignature,
+	ConstantDeprecated,
+	ConstantSynthetic,
+	ConstantCValue
 };
 #endif
