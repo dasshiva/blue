@@ -43,4 +43,8 @@ enum Errors {
 #define ConstantMethodHandle   15
 #define ConstantMethodType     16
 #define ConstantInvokeDynamic  18
+
+enum AttributeIdentifiers {
+	ConstantCode = 0
+};
 #endif

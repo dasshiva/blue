@@ -395,6 +395,26 @@ static int ParseFields (struct ClassFile* file) {
 	return 1;
 }
 
+static int ParseCode (struct ClassFile* file, Method* this, int mapidx) {
+	/*this->AttributeMap[mapidx].low = file->Offset;
+	this->AttributeMap[mapidx].flags = ConstantCode;
+	u16 max_stack = ReadU16(file);
+	fix_endian(file, file->Offset, u16, max_stack);
+	u16 max_locals = ReadU16(file);
+	fix_endian(file, file->Offset, u16, max_locals);
+	u32 code_len = ReadU32(file);
+	if (!code_len || code_len > 65536) {
+		log("Code array is null or too large\n");
+		file->Handler(ERROR_CLASS_FILE_FORMAT);
+		return -1;
+	}
+	
+	file->Offset += code_len;
+	u16 except_table_len = ReadU16(file);
+	file->Offset += except_table_len * 8; */ 
+	return 1;
+}
+
 static int ParseMethods (struct ClassFile* file) {
 	file->MethodsCount = ReadU16(file);
 	if (file->Offset + file->MethodsCount * sizeof(u16) >= file->Length) {
@@ -439,6 +459,7 @@ static int ParseMethods (struct ClassFile* file) {
 					check_index(index, file->ConstantPoolCount, file);
 					break;
 				}
+				//case Code: ParseCode(file, &this, j); break;
 				default: {
 					log("Unknown method attribute %s\n", GetString(file->strtable, name));
 					file->Offset += size;
