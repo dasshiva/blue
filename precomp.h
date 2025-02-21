@@ -1,8 +1,0 @@
-#define ConstantValue 10151139415105393898UL
-#define Synthetic 3080517345985570236UL
-#define Signature 5915618510650736601UL
-#define Deprecated 14229293811386703274UL
-#define RuntimeVisibleAnnotations 11850683579784595047UL
-#define RuntimeInvisibleAnnotations 6400594892733970832UL
-#define SourceFile 2088013056104510700UL
-#define Code 4204693406374107694UL
